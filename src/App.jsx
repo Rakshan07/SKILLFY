@@ -1,4 +1,3 @@
-import ThemeToggle from './components/ui/ThemeToggle';
 import VerifyEmail from './pages/public/VerifyEmail';
 import SocialCallback from './pages/public/SocialCallback';
 import OrganizerReview from './pages/public/OrganizerReview';
@@ -31,7 +30,7 @@ export default function App() {
           <Route path="/*" element={<Suspense fallback={<div role="status" style={{minHeight:'100vh',background:'var(--sf-bg)',color:'var(--sf-text)',padding:40}}>Opening your workspace…</div>}><Workspace /></Suspense>} />
         </Routes>
         <ToastContainer />
-        <ThemeToggle />
+
       </BrowserRouter>
     </AppProvider>
   );

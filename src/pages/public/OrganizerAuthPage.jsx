@@ -1,3 +1,4 @@
+import ThemeToggle from '../../components/ui/ThemeToggle';
 import EmailSignup from '../../components/auth/EmailSignup';
 import SocialSignIn from '../../components/auth/SocialSignIn';
 // ─── Dedicated Organizer Sign In & Sign Up Page ──────────────────────────────
@@ -45,7 +46,7 @@ export default function OrganizerAuthPage() {
   }
 
   return (
-    <div className="relative min-h-screen bg-[var(--sf-bg)] text-[var(--sf-text)] flex flex-col justify-between overflow-hidden">
+    <div className="sf-auth-page relative min-h-screen bg-[var(--sf-bg)] text-[var(--sf-text)] flex flex-col justify-between overflow-hidden">
       {/* Ambient background */}
       <TubesBackground className="absolute inset-0 pointer-events-none" />
 
@@ -69,7 +70,7 @@ export default function OrganizerAuthPage() {
             <span className="hidden sm:inline">Home</span>
           </Link>
         </div>
-      </header>
+      <ThemeToggle /></header>
 
       {/* Main Container */}
       <main className="relative z-20 max-w-lg w-full mx-auto px-5 my-auto py-8">

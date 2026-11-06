@@ -1,3 +1,4 @@
+import ThemeToggle from '../../components/ui/ThemeToggle';
 import { passwordGuide, validNewPassword } from '../../workspace/passwordPolicy';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -34,7 +35,7 @@ export default function PasswordRecovery({ reset = false }) {
   }
   const field = 'mt-2 block w-full rounded-xl border border-[var(--sf-border)] bg-[var(--sf-bg)] px-4 py-3 text-ink focus:outline-none focus:ring-2 focus:ring-[#B69BD8]';
   return <div className="min-h-screen bg-[var(--sf-bg)] text-[var(--sf-text)] px-5 py-8">
-    <header className="max-w-6xl mx-auto"><Link to="/"><BrandWordmark size={20} /></Link></header>
+    <header className="max-w-6xl mx-auto"><Link to="/"><BrandWordmark size={20} /></Link><ThemeToggle /></header>
     <main className="max-w-md mx-auto mt-16 sm:mt-24 rounded-3xl border border-[var(--sf-border)] bg-[var(--sf-panel)] p-7 sm:p-9 shadow-xl">
       <p className="text-xs uppercase tracking-widest text-[var(--sf-accent-text)] mb-3">Account recovery</p>
       <h1 className="text-3xl font-semibold mb-3">{reset ? 'Choose a new password' : 'Forgot your password?'}</h1>

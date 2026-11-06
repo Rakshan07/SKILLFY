@@ -54,7 +54,7 @@ class CaseStudyRubric(BaseModel):
     key_points: List[str] = Field(min_length=1, max_length=8)
     target_role: str = Field(min_length=2, max_length=100)
     target_skill: str = Field(min_length=1, max_length=100)
-    estimated_time_minutes: int = Field(default=15, ge=5, le=60)
+    estimated_time_minutes: int = Field(default=15, ge=2, le=60)
     scoring_guidelines: str = Field(min_length=10, max_length=1000)
 
 class CaseStudyQuestion(BaseModel):
@@ -63,7 +63,7 @@ class CaseStudyQuestion(BaseModel):
     target_skill: str = Field(min_length=1, max_length=100)
     difficulty: Literal["beginner", "intermediate", "advanced"]
     response_type: Literal["text"] = "text"
-    estimated_time_minutes: int = Field(default=15, ge=5, le=60)
+    estimated_time_minutes: int = Field(default=15, ge=2, le=60)
     expected_response_format: str = Field(default="Written analysis (2-4 paragraphs)")
     rubric: CaseStudyRubric
 
@@ -250,6 +250,18 @@ Return ONLY a valid JSON object matching the EventBriefOutput schema:
 
 # ─── 2. Generate Personalized Case Studies ────────────────────────────────────
 
+def assessment_style(category: str) -> str:
+    styles = {
+        "music": "Ask short, direct questions about the participant's instrument or vocal role, rhythm, listening, rehearsal and musical collaboration. Use simple explanations or a few sentences; no fictional case-study scenario, engineering architecture or coding task. Do not claim written answers prove performance ability.",
+        "debate": "Ask concise questions about constructing an argument, identifying evidence, rebuttal or speaking technique relevant to the motion. Invite a short argument or explanation, not a software or business case study.",
+        "esports": "Ask short questions about the event's actual game, preferred in-game role, team communication, positioning and strategy. Do not invent a game title absent from the event brief. No coding, software architecture or unrelated case-study narrative.",
+        "technical_quiz": "Ask concise direct subject-knowledge or reasoning questions grounded in the quiz topics. No lengthy fictional case-study narrative.",
+        "startup_pitch": "Ask focused questions about the proposed customer problem, value proposition, market evidence or presenting a pitch. A brief practical example is appropriate.",
+        "research_presentation": "Ask focused questions about research methods, evidence quality, findings or communicating the participant's research area.",
+        "project_exhibition": "Ask concise questions about explaining, demonstrating and validating the participant's project. Follow its actual discipline, not an assumed software project.",
+    }
+    return styles.get(category, "Use practical technical case studies only when appropriate to the actual event discipline, selected skills and role. For other event categories, choose concise knowledge or practical collaboration questions appropriate to that discipline. Never assume every event is a hackathon.")
+
 async def generate_case_studies(
     event_title: str,
     category: str,
@@ -279,7 +291,8 @@ async def generate_case_studies(
     num_questions = 3 if len(preferred_roles) >= 2 else 2
 
     prompt = f"""You are the Skillfy Assessment Designer.
-Design EXACTLY {num_questions} personalized, practical written case-study questions for a participant entering this event.
+Design EXACTLY {num_questions} personalized written assessment questions for a participant entering this event.
+CATEGORY-SPECIFIC FORMAT (mandatory): {assessment_style(category)}
 
 EVENT DETAILS:
 - Title: {safe_title}
@@ -293,35 +306,35 @@ PARTICIPANT PROFILE (FOR CALIBRATION ONLY):
 - Stated Experience Level: {experience_level} (beginner / intermediate / advanced)
 
 CRITICAL REQUIREMENTS:
-1. Questions MUST be practical, realistic open-ended scenarios requiring written paragraph answers.
+1. Follow the category-specific format above. Direct questions should invite a few sentences; technical case studies may need paragraphs. Do not force scenarios onto music, debate, esports or quizzes.
 2. DO NOT GENERATE MULTIPLE-CHOICE QUESTIONS.
-3. Questions must relate directly to this actual event ({safe_title}) and require the participant to think through realistic architectural, analytical, creative, or collaborative decisions.
+3. Questions must relate directly to this actual event ({safe_title}) and assess relevant knowledge, analytical, creative, practical or collaborative ability for their role.
 4. Difficulty calibration:
    - beginner: foundational understanding, safe decision-making, systematic troubleshooting.
    - intermediate: trade-off evaluation, practical edge cases, concrete implementation strategy.
-   - advanced: architecture trade-offs, scalability, failure modes, coordination under tight constraints.
+   - advanced: deeper discipline-specific knowledge, nuanced judgement and coordination. Architecture and scalability apply only to suitable technical events.
 5. Provide a private evaluation rubric for each question with:
    - 2 to 4 distinct criteria (with max_score summing to 100).
    - key points that demonstrate genuine competence.
    - scoring guidelines.
-6. Expected completion time should be 10-20 minutes per question.
+6. Direct questions should take 2-5 minutes; substantial technical case studies may take 10-20 minutes. Match expected_response_format and rubric to the question type and discipline.
 
 Return ONLY a valid JSON object matching this schema:
 {{
   "questions": [
     {{
-      "prompt": "Detailed realistic scenario description and the concrete question to solve...",
+      "prompt": "A clear question in the required category-specific format...",
       "target_role": "...",
       "target_skill": "...",
       "difficulty": "{experience_level}",
       "response_type": "text",
       "estimated_time_minutes": 15,
-      "expected_response_format": "2-4 paragraphs outlining your approach, key decisions, and trade-offs.",
+      "expected_response_format": "Specify a short answer or detailed approach as appropriate to the category.",
       "rubric": {{
         "criteria": [
           {{"criterion_name": "Problem Analysis & Soundness", "description": "...", "max_score": 40}},
-          {{"criterion_name": "Technical Execution & Specifics", "description": "...", "max_score": 40}},
-          {{"criterion_name": "Trade-offs & Edge Cases", "description": "...", "max_score": 20}}
+          {{"criterion_name": "Relevant Knowledge & Application", "description": "...", "max_score": 40}},
+          {{"criterion_name": "Clarity & Judgement", "description": "...", "max_score": 20}}
         ],
         "key_points": ["...", "..."],
         "target_role": "...",
@@ -410,7 +423,7 @@ QUESTIONS, PRIVATE RUBRICS, AND CANDIDATE ANSWERS:
 EVALUATION RULES:
 1. Evaluate ONLY what the candidate wrote. Do not hallucinate capabilities or score unrelated personal details.
 2. Short assessments are an estimate, not absolute proof of someone's entire ability.
-3. Do not reward verbosity simply for being long. Look for sound reasoning, practical trade-offs, and concrete technical clarity.
+3. Do not reward verbosity. Concise correct answers to direct questions can earn full marks. Apply discipline-specific rubrics; do not require technical architecture or trade-offs for music, debate or esports. Written music answers estimate knowledge and collaboration, not demonstrated instrumental or vocal performance.
 4. If an answer is trivial or empty, mark insufficient_evidence=true and assign a score reflective of lack of evidence.
 5. Criterion scores must score against the private rubric criteria for each question (0 to max_score).
 6. Provide role suitability (developing / strong / exceptional) with honest reasoning.

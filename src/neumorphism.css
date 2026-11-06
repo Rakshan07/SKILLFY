@@ -1,0 +1,73 @@
+/* Soft, theme-aware relief. Borders and focus outlines remain explicit. */
+:root {
+  --sf-neo-base:#f5eff9;
+  --sf-neo-highlight:#ffffff;
+  --sf-neo-shade:#d9cde57a;
+  --sf-neo-raised:6px 6px 16px var(--sf-neo-shade),-5px -5px 14px var(--sf-neo-highlight);
+  --sf-neo-control:3px 3px 8px var(--sf-neo-shade),-3px -3px 8px var(--sf-neo-highlight);
+  --sf-neo-inset:inset 2px 2px 5px #b7a5c42b,inset -2px -2px 5px #ffffffb3;
+}
+:root[data-theme='dark'] {
+  --sf-neo-base:#251d2f;
+  --sf-neo-highlight:#46335166;
+  --sf-neo-shade:#09060f80;
+  --sf-neo-inset:inset 2px 2px 5px #08050d66,inset -2px -2px 5px #59416633;
+}
+html #tw-workspace-review :is(.tw-panel,.tw-metrics,.tw-gallery-card,.tw-optional-documents) {
+  box-shadow:var(--sf-neo-raised);
+  border-color:var(--sf-border);
+}
+html #tw-workspace-review .tw-metric {
+  background:linear-gradient(135deg,var(--sf-neo-base),var(--sf-surface));
+}
+html #tw-workspace-review :is(.tw-button.secondary,.tw-notification-toggle),
+html .skillfy-theme-toggle {
+  background:var(--sf-neo-base);
+  box-shadow:var(--sf-neo-control);
+  border:1px solid var(--sf-border);
+}
+html #tw-workspace-review .tw-button:not(.secondary),
+html .motion-landing .button {
+  box-shadow:3px 4px 9px var(--sf-neo-shade),inset 1px 1px 1px #ffffff59;
+}
+html #tw-workspace-review .tw-nav a.active,
+html #tw-workspace-review .tw-room-navitem.active {
+  box-shadow:var(--sf-neo-inset);
+  border:1px solid var(--sf-border);
+  color:var(--sf-accent-text);
+}
+html #tw-workspace-review .tw-field :is(input:not([type=file]):not([type=checkbox]):not([type=radio]),select,textarea) {
+  box-shadow:var(--sf-neo-inset);
+  border:1px solid var(--sf-border);
+}
+html #tw-workspace-review .tw-field :is(input,select,textarea):focus-visible {
+  border-color:var(--sf-accent-text);
+  outline:2px solid var(--sf-accent-text);
+  outline-offset:2px;
+}
+html .sf-auth-page .auth-interactive-card {
+  background:var(--sf-neo-base);
+  box-shadow:var(--sf-neo-raised)!important;
+}
+html .motion-landing :is(.organizers,.filters) {
+  box-shadow:var(--sf-neo-control);
+}
+html #tw-workspace-review .tw-team-room {
+  box-shadow:var(--sf-neo-raised);
+}
+html #tw-workspace-review .tw-room-conversation .tw-chat-form {
+  box-shadow:var(--sf-neo-inset);
+}
+html #tw-workspace-review :is(.tw-button,.tw-notification-toggle):not(:disabled):active,
+html .skillfy-theme-toggle:active {
+  box-shadow:var(--sf-neo-inset);
+}
+/* Dense nested layouts retain a single surface, rather than stacked shadows. */
+html #tw-workspace-review .tw-optional-documents>.tw-panel,
+html #tw-workspace-review .tw-team-room .tw-panel {
+  box-shadow:none;
+}
+@media(forced-colors:active) {
+  html #tw-workspace-review :is(.tw-panel,.tw-metrics,.tw-gallery-card,.tw-button,.tw-field input,.tw-field select,.tw-field textarea),
+  html .skillfy-theme-toggle {box-shadow:none;border:1px solid CanvasText;}
+}

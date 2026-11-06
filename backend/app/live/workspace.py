@@ -7,14 +7,40 @@ from .auth import current_user
 from .db import one, rows, execute, require
 router=APIRouter(tags=['Workspace'])
 
+@router.get('/notifications/me')
+def notifications(user=Depends(current_user), db=Depends(get_db)):
+    return {'items': rows(db, '''SELECT id,title,body,target_path,read_at,created_at
+      FROM hackloop.notifications WHERE user_id=:uid AND type='team_mention'
+      ORDER BY created_at DESC LIMIT 50''',uid=user['id'])}
+
+@router.post('/notifications/{nid}/read')
+def read_notification(nid: UUID, user=Depends(current_user), db=Depends(get_db)):
+    result=one(db, '''UPDATE hackloop.notifications SET read_at=COALESCE(read_at,now())
+      WHERE id=:nid AND user_id=:uid RETURNING id''',nid=nid,uid=user['id'])
+    require(result)
+    db.commit()
+    return result
+
 @router.get('/workspace/me')
 def workspace(user=Depends(current_user),db=Depends(get_db)):
     uid=user['id']
     progress=one(db,'SELECT * FROM hackloop.user_progress WHERE user_id=:uid',uid=uid) or {'total_xp':0,'level':None}
     next_level=one(db,'SELECT level,title,minimum_xp FROM hackloop.levels WHERE minimum_xp>:xp ORDER BY minimum_xp LIMIT 1',xp=progress['total_xp'])
-    registrations=rows(db,'''SELECT e.id,e.title,e.category,e.starts_at,e.ends_at,e.registration_closes_at,r.status AS registration_status,e.status
-      FROM hackloop.event_registrations r JOIN hackloop.events e ON e.id=r.event_id WHERE r.user_id=:uid AND r.status='registered' ORDER BY e.starts_at''',uid=uid)
-    teams=rows(db,'''SELECT t.id,t.name,t.event_id,t.status,e.title AS event_title,m.membership_role AS role FROM hackloop.team_members m
+    registrations=rows(db,'''SELECT e.id,e.title,e.category,e.starts_at,e.ends_at,e.registration_closes_at,
+      e.registration_opens_at,e.description,e.min_team_size,e.max_team_size,e.prize_pool,
+      o.name AS organizer_name,
+      CASE WHEN e.cover_image IS NOT NULL THEN '/api/v1/events/' || e.id::text || '/image' END AS image_url,
+      CASE e.event_mode WHEN 'online' THEN 'remote' WHEN 'onsite' THEN 'in-person' ELSE 'hybrid' END AS mode,
+      r.status AS registration_status,
+      CASE WHEN e.status='published' AND e.registration_opens_at<=now() AND e.registration_closes_at>now()
+        THEN 'open' ELSE e.status::text END AS status
+      FROM hackloop.event_registrations r JOIN hackloop.events e ON e.id=r.event_id LEFT JOIN hackloop.organizations o ON o.id=e.organization_id WHERE r.user_id=:uid AND r.status='registered' ORDER BY e.starts_at''',uid=uid)
+    teams=rows(db,'''SELECT t.id,t.name,t.event_id,t.status,e.title AS event_title,e.category,m.membership_role AS role,m.assigned_role,e.max_team_size,
+      CASE WHEN e.cover_image IS NOT NULL THEN '/api/v1/events/' || e.id::text || '/image' END AS image_url,
+      (SELECT count(*) FROM hackloop.team_members active WHERE active.team_id=t.id AND active.left_at IS NULL) AS member_count,
+      (SELECT json_agg(preview) FROM (SELECT u.display_name FROM hackloop.team_members tm
+        JOIN hackloop.users u ON u.id=tm.user_id WHERE tm.team_id=t.id AND tm.left_at IS NULL ORDER BY tm.joined_at LIMIT 4) preview) AS members_preview
+      FROM hackloop.team_members m
       JOIN hackloop.teams t ON t.id=m.team_id JOIN hackloop.events e ON e.id=t.event_id WHERE m.user_id=:uid AND m.left_at IS NULL ORDER BY m.joined_at DESC''',uid=uid)
     history=rows(db,'''SELECT h.*,c.role_description,c.contribution_summary,
       COALESCE((SELECT sum(x.points) FROM hackloop.xp_ledger x JOIN hackloop.event_outcomes o ON o.id=x.outcome_id WHERE x.user_id=h.user_id AND o.event_id=h.event_id),0) AS xp_earned
@@ -22,8 +48,10 @@ def workspace(user=Depends(current_user),db=Depends(get_db)):
       WHERE h.user_id=:uid ORDER BY h.ends_at DESC''',uid=uid)
     feedback=one(db,"SELECT count(*) AS count,avg(rating) AS rating FROM hackloop.event_peer_feedback WHERE reviewee_id=:uid AND review_status='approved'",uid=uid)
     contributions=one(db,"SELECT count(*) AS count FROM hackloop.event_contributions WHERE user_id=:uid AND review_status='approved'",uid=uid)['count']
-    assessments=rows(db,'''SELECT s.id,s.event_id,s.status,s.submitted_at,a.title FROM hackloop.assessment_submissions s
-      JOIN hackloop.assessments a ON a.id=s.assessment_id WHERE s.user_id=:uid ORDER BY s.created_at DESC''',uid=uid)
+    assessments=rows(db,'''SELECT s.id,s.event_id,s.status,s.submitted_at,s.evaluation_score,a.title,e.title AS event_title,e.category,
+      CASE WHEN e.cover_image IS NOT NULL THEN '/api/v1/events/' || e.id::text || '/image' END AS image_url
+      FROM hackloop.assessment_submissions s
+      JOIN hackloop.assessments a ON a.id=s.assessment_id JOIN hackloop.events e ON e.id=s.event_id WHERE s.user_id=:uid ORDER BY s.created_at DESC''',uid=uid)
     return {'progress':progress,'next_level':next_level,'registrations':registrations,'teams':teams,'history':history,'feedback':feedback,'contributions':contributions,'assessments':assessments}
 
 @router.get('/challenges/xp/me')

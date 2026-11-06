@@ -19,7 +19,7 @@ html,body,#root {background:var(--sf-bg);color:var(--sf-text)}
 .skillfy-wordmark {display:inline-flex;align-items:center;gap:9px;font-weight:750;letter-spacing:-.6px;color:var(--sf-text);line-height:1.2;white-space:nowrap;flex-shrink:0}
 .skillfy-brand-accent {color:var(--sf-accent-text)}
 .skillfy-logo {flex-shrink:0;border-radius:8px;background:white}
-.skillfy-theme-toggle {position:fixed;bottom:18px;right:18px;z-index:10000;display:flex;align-items:center;gap:9px;background:var(--sf-panel);color:var(--sf-text);border:1px solid var(--sf-border-strong);border-radius:30px;padding:11px 16px;font-size:12px;font-weight:650;box-shadow:0 4px 20px #20152f25;cursor:pointer}
+.skillfy-theme-toggle {position:static;flex-shrink:0;display:inline-flex;align-items:center;gap:9px;background:var(--sf-panel);color:var(--sf-text);border:1px solid var(--sf-border-strong);border-radius:30px;padding:11px 16px;font-size:12px;font-weight:650;box-shadow:0 4px 20px #20152f25;cursor:pointer}
 .card-luxury,.cyber-card {background:var(--sf-panel)}
 input,textarea,select {color:var(--sf-text);background:var(--sf-panel)}
 /* Keep input icons separate from values, even with global form padding. */
@@ -53,7 +53,7 @@ html #tw-workspace-review .tw-bottomline {padding-bottom:75px}
 /* Google retains its official white button and colored mark. */
 button:has(svg path[fill='#EA4335']) {background:white!important;color:#1f1f1f!important}
 @media(max-width:700px) {
- .skillfy-theme-toggle {bottom:12px;right:12px;padding:10px}
+ .skillfy-theme-toggle {padding:10px}
  .skillfy-theme-toggle span {display:none}
  .motion-landing .intro-copy {width:88%;padding:0;bottom:7%;}
  .motion-landing .nav {gap:10px;padding-inline:4%}
@@ -71,3 +71,19 @@ button[class*="bg-[#C5ADE5]"],a[class*="bg-[#C5ADE5]"],button.bg-garnet,button.b
 [data-theme="dark"] .skillfy-tubes-canvas {filter:none;opacity:.65}
 
 .skillfy-auth-footer {padding:20px 24px 70px}
+
+/* Keep the theme control in header layout, away from page content. */
+.skillfy-theme-toggle {width:40px;height:40px;min-width:40px;min-height:40px;justify-content:center;padding:0;box-shadow:none;margin-left:12px}
+.skillfy-theme-toggle span {display:none}
+header:has(> .skillfy-theme-toggle) {display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+header:has(> .skillfy-theme-toggle) > .skillfy-theme-toggle {margin-left:auto}
+#tw-workspace-review .tw-topmeta {display:flex;align-items:center;gap:8px}
+.motion-landing .nav-right .skillfy-theme-toggle {padding:0;width:40px;height:40px;border-radius:50%;background:var(--sf-panel);color:var(--sf-text);border:1px solid var(--sf-border)}
+/* Compact authentication spacing without shrinking tap targets. */
+.sf-auth-page>header{padding-top:16px;padding-bottom:16px}
+.sf-auth-page>main{padding-top:16px;padding-bottom:16px}
+.sf-auth-page .auth-interactive-card{padding:24px}
+.sf-auth-page .auth-interactive-card> *+*{margin-top:16px}
+.sf-auth-page .auth-interactive-card h1{line-height:1.25}
+.sf-auth-page footer{padding-top:12px;padding-bottom:12px}
+@media(max-width:600px){.sf-auth-page .auth-interactive-card{padding:20px}.sf-auth-page>header{padding:14px 18px}}

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 import secrets
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, AwareDatetime, model_validator
 from backend.app.db.session import get_db
 from .auth import current_user, bearer
@@ -52,6 +52,7 @@ class EventCreate(BaseModel):
     title: str = Field(min_length=3, max_length=200)
     category_id: str
     description: str = Field(min_length=10, max_length=20000)
+    prize_pool: Optional[str] = Field(default=None, max_length=1000)
     rules: Optional[str] = Field(default=None, max_length=10000)
     eligibility: Optional[str] = Field(default=None, max_length=5000)
     expected_deliverables: Optional[str] = Field(default=None, max_length=10000)
@@ -84,6 +85,7 @@ class EventCreate(BaseModel):
 class EventUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=3, max_length=200)
     description: Optional[str] = Field(default=None, min_length=10, max_length=20000)
+    prize_pool: Optional[str] = Field(default=None, max_length=1000)
     rules: Optional[str] = Field(default=None, max_length=10000)
     eligibility: Optional[str] = Field(default=None, max_length=5000)
     expected_deliverables: Optional[str] = Field(default=None, max_length=10000)
@@ -126,8 +128,11 @@ def event_response(db, e):
 
     registered_count = one(db, "SELECT count(*) AS n FROM hackloop.event_registrations WHERE event_id=:eid AND status='registered'", eid=e['id'])['n']
 
+    organization = one(db,'SELECT name FROM hackloop.organizations WHERE id=:id',id=e['organization_id'])
     return {
-        **e,
+        'organizer_name': organization['name'] if organization else None,
+        **{k:v for k,v in e.items() if k not in ('cover_image','cover_image_media_type')},
+        'image_url': f"/api/v1/events/{e['id']}/image" if e.get('cover_image') else None,
         'category_id': e['category'],
         'category_name': CATEGORIES.get(e['category'], e['category']),
         'organizer_id': e['created_by'],
@@ -177,16 +182,16 @@ def create(body: EventCreate, user = Depends(current_user), db = Depends(get_db)
     org = require(approved_organization(db, user['id']), 403, 'An approved organizer organization is required before creating events')
     e = one(db, '''INSERT INTO hackloop.events(organization_id,created_by,title,slug,description,category,event_mode,venue,
       registration_opens_at,registration_closes_at,starts_at,ends_at,min_team_size,max_team_size,participant_capacity,
-      rules,eligibility,expected_deliverables,constraints_and_tools,judging_criteria,version,brief_version)
+      rules,eligibility,expected_deliverables,constraints_and_tools,judging_criteria,prize_pool,version,brief_version)
       VALUES(:oid,:uid,:title,:slug,:description,:category,:mode,:location,now(),:deadline,:start,:end,:min,:max,:capacity,
-      :rules,:eligibility,:deliverables,:constraints,:judging,1,1) RETURNING *''',
+      :rules,:eligibility,:deliverables,:constraints,:judging,:prize,1,1) RETURNING *''',
       oid=org['organization_id'], uid=user['id'], title=body.title.strip(), slug='event-' + secrets.token_hex(12),
       description=body.description.strip(), category=body.category_id,
       mode={'remote': 'online', 'in-person': 'onsite', 'hybrid': 'hybrid'}[body.mode],
       location=body.location, deadline=body.registration_deadline, start=body.start_date, end=body.end_date,
       min=body.min_team_size, max=body.max_team_size, capacity=body.max_participants,
       rules=body.rules, eligibility=body.eligibility, deliverables=body.expected_deliverables,
-      constraints=body.constraints_and_tools, judging=body.judging_criteria)
+      constraints=body.constraints_and_tools, judging=body.judging_criteria, prize=body.prize_pool)
 
     roles = body.roles or ([Role(name='Contributor')] if body.requirements else [])
     for role in roles:
@@ -223,6 +228,7 @@ def update(eid: UUID, body: EventUpdate, user = Depends(current_user), db = Depe
       title=COALESCE(:title, title),
       description=COALESCE(:description, description),
       rules=COALESCE(:rules, rules),
+      prize_pool=COALESCE(:prize, prize_pool),
       eligibility=COALESCE(:eligibility, eligibility),
       expected_deliverables=COALESCE(:deliverables, expected_deliverables),
       constraints_and_tools=COALESCE(:constraints, constraints_and_tools),
@@ -237,7 +243,7 @@ def update(eid: UUID, body: EventUpdate, user = Depends(current_user), db = Depe
       description=body.description.strip() if body.description else None,
       rules=body.rules, eligibility=body.eligibility,
       deliverables=body.expected_deliverables, constraints=body.constraints_and_tools,
-      judging=body.judging_criteria, min_team_size=body.min_team_size,
+      prize=body.prize_pool, judging=body.judging_criteria, min_team_size=body.min_team_size,
       max_team_size=body.max_team_size,
       event_brief=json.dumps(body.event_brief) if body.event_brief else None,
       version=new_version)
@@ -380,3 +386,24 @@ def get_registration(eid: UUID, user = Depends(current_user), db = Depends(get_d
     if not reg:
         return {'registered': False}
     return {'registered': True, 'registration': reg}
+
+@router.post('/{eid}/image')
+async def upload_event_image(eid: UUID, request: Request, user=Depends(current_user), db=Depends(get_db)):
+    event = require(one(db,'SELECT id,created_by FROM hackloop.events WHERE id=:id',id=eid))
+    require(event['created_by']==user['id'],403,'Only the event owner can change its image')
+    require(approved_organization(db,user['id']),403,'Approved organizer access required')
+    data=bytearray()
+    async for chunk in request.stream():
+        data.extend(chunk)
+        require(len(data)<=5242880,413,'Choose an image of 5 MB or smaller')
+    media = 'image/png' if data.startswith(b'\x89PNG\r\n\x1a\n') else 'image/jpeg' if data.startswith(b'\xff\xd8\xff') else 'image/webp' if data[:4]==b'RIFF' and data[8:12]==b'WEBP' else None
+    require(media,422,'Choose a PNG, JPEG or WebP image')
+    execute(db,'UPDATE hackloop.events SET cover_image=:data,cover_image_media_type=:media,updated_at=now() WHERE id=:id',data=bytes(data),media=media,id=eid)
+    db.commit()
+    return {'image_url':f'/api/v1/events/{eid}/image'}
+
+@router.get('/{eid}/image')
+def event_image(eid: UUID,db=Depends(get_db)):
+    image=require(one(db,"SELECT cover_image,cover_image_media_type FROM hackloop.events WHERE id=:id AND status IN ('published','completed')",id=eid),404,'Image not available')
+    require(image['cover_image'],404,'No event image')
+    return Response(bytes(image['cover_image']),media_type=image['cover_image_media_type'],headers={'X-Content-Type-Options':'nosniff','Cache-Control':'no-cache'})

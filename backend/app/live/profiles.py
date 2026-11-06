@@ -1,10 +1,41 @@
 from typing import Annotated
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request, Response
+from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from backend.app.db.session import get_db
 from .auth import current_user
 from .db import one, rows, execute, require
 router=APIRouter(prefix='/profiles',tags=['Profiles'])
+
+@router.post('/me/avatar')
+async def upload_avatar(request: Request, user=Depends(current_user), db=Depends(get_db)):
+    image=bytearray()
+    async for chunk in request.stream():
+        image.extend(chunk)
+        require(len(image)<=5*1024*1024,413,'Choose an image of 5 MB or smaller')
+    data=bytes(image)
+    media='image/png' if data.startswith(b'\x89PNG\r\n\x1a\n') else 'image/jpeg' if data.startswith(b'\xff\xd8\xff') else 'image/webp' if data[:4]==b'RIFF' and data[8:12]==b'WEBP' else None
+    require(media,422,'Choose a PNG, JPEG or WebP image')
+    execute(db,'''INSERT INTO hackloop.profile_avatars(user_id,image_data,media_type)
+      VALUES(:uid,:data,:media) ON CONFLICT(user_id) DO UPDATE
+      SET image_data=EXCLUDED.image_data,media_type=EXCLUDED.media_type,updated_at=now()''',uid=user['id'],data=data,media=media)
+    db.commit()
+    return {'status':'saved'}
+
+@router.delete('/me/avatar',status_code=204)
+def remove_avatar(user=Depends(current_user), db=Depends(get_db)):
+    execute(db,'DELETE FROM hackloop.profile_avatars WHERE user_id=:uid',uid=user['id'])
+    db.commit()
+    return Response(status_code=204)
+
+@router.get('/{uid}/avatar')
+def avatar(uid:UUID, user=Depends(current_user), db=Depends(get_db)):
+    require(uid==user['id'] or one(db,'''SELECT 1 FROM hackloop.team_members viewer
+      JOIN hackloop.team_members owner ON owner.team_id=viewer.team_id
+      WHERE viewer.user_id=:viewer AND owner.user_id=:owner
+      AND viewer.left_at IS NULL AND owner.left_at IS NULL LIMIT 1''',viewer=user['id'],owner=uid),403,'Photo is only available to you and your teammates')
+    photo=require(one(db,'SELECT image_data,media_type FROM hackloop.profile_avatars WHERE user_id=:uid',uid=uid),404,'No profile picture')
+    return Response(bytes(photo['image_data']),media_type=photo['media_type'],headers={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'})
 class ProfileUpdate(BaseModel):
     model_config=ConfigDict(extra='forbid')
     full_name: str | None = Field(default=None,min_length=2,max_length=100)
@@ -27,7 +58,8 @@ def profile(user=Depends(current_user),db=Depends(get_db)):
       WHERE p.user_id=:uid''',uid=user['id']) or {}
     skills=rows(db,'''SELECT s.id AS skill_id,s.name AS skill_name,s.category,us.proficiency
       FROM hackloop.user_skills us JOIN hackloop.skills s ON s.id=us.skill_id WHERE us.user_id=:uid ORDER BY s.name''',uid=user['id'])
-    return {**p,'has_password':user['has_password'],'roles':user['roles'],'full_name':user['full_name'],'email':user['email'],'skills':skills,
+    photo=one(db,'SELECT updated_at FROM hackloop.profile_avatars WHERE user_id=:uid',uid=user['id'])
+    return {**p,'photo_revision':photo['updated_at'].isoformat() if photo else '', 'has_password':user['has_password'],'roles':user['roles'],'full_name':user['full_name'],'email':user['email'],'skills':skills,
             'address':', '.join(str(p.get(k)) for k in ['address_line_1','city','region','postal_code','country_code'] if p.get(k))}
 
 def persist_profile(body,user,db,complete=False):

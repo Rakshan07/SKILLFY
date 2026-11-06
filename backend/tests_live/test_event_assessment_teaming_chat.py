@@ -120,12 +120,26 @@ def test_approved_organizer_create_and_publish():
     eid = event['id']
     assert event['status'] == 'draft'
     assert event['version'] == 1
+    assert client.patch(f'/api/v1/events/{eid}',headers=org_headers,json={'prize_pool':'INR 25,000'}).status_code==200
+    image_bytes=b'\x89PNG\r\n\x1a\n'+b'test-image'
+    assert client.post(f'/api/v1/events/{eid}/image',headers={**org_headers,'Content-Type':'image/png'},content=image_bytes).status_code==200
+    assert client.get(f'/api/v1/events/{eid}/image').status_code==404
+    assert client.post(f'/api/v1/events/{eid}/image',headers=org_headers,content=b'<svg>bad</svg>').status_code==422
+
 
     # Publish draft
     pub_res = client.post(f"/api/v1/events/{eid}/publish", headers=org_headers)
     assert pub_res.status_code == 200, pub_res.text
     published = pub_res.json()
     assert published['status'] == 'open'
+    assert published['prize_pool']=='INR 25,000'
+    assert published['image_url']==f'/api/v1/events/{eid}/image'
+    image_response=client.get(published['image_url'])
+    assert image_response.status_code==200 and image_response.content==image_bytes
+    assert image_response.headers['content-type']=='image/png'
+    outsider, outsider_headers, _ = create_test_user('ImageOutsider')
+    assert client.post(f'/api/v1/events/{eid}/image',headers=outsider_headers,content=image_bytes).status_code==403
+
     assert client.post(f'/api/v1/events/{eid}/register', headers=org_headers, json={}).status_code == 403
     assert client.post(f'/api/v1/events/{eid}/assessment/start', headers=org_headers).status_code == 403
 
@@ -524,16 +538,22 @@ def test_team_capacity_and_single_active_membership():
     m2, m2_headers, _ = create_test_user("Member2User")
     client.post(f"/api/v1/events/{eid}/register", headers=m2_headers)
 
-    # Captain invites Member 1
-    inv_res = client.post(f"/api/v1/teams/{tid}/invitations", headers=capt_headers, json={
-        'candidate_user_id': m1['id'], 'target_role': 'Specialist'
-    })
-    assert inv_res.status_code == 201
-
-    # Member 1 accepts invitation
-    req_id = client.get(f"/api/v1/events/{eid}/my-requests", headers=m1_headers).json()['invitations'][0]['id']
-    acc_res = client.post(f"/api/v1/team-requests/{req_id}/respond", headers=m1_headers, json={'decision': 'accept'})
-    assert acc_res.status_code == 200
+    # Join requests persist across reloads, are idempotent, and reach the leader.
+    join=client.post(f"/api/v1/teams/{tid}/join-requests",headers=m1_headers,json={'target_role':'Specialist'})
+    assert join.status_code == 201
+    repeat=client.post(f"/api/v1/teams/{tid}/join-requests",headers=m1_headers,json={'target_role':'Specialist'})
+    assert repeat.status_code == 201
+    assert repeat.json()['request_id'] == join.json()['request_id']
+    pending=client.get(f"/api/v1/events/{eid}/my-requests",headers=m1_headers).json()['join_requests']
+    assert len(pending)==1 and pending[0]['team_id']==tid
+    inbox=client.get(f"/api/v1/teams/{tid}/requests",headers=capt_headers).json()['requests']
+    assert len(inbox)==1 and inbox[0]['user_id']==m1['id']
+    req_id=join.json()['request_id']
+    assert client.post(f"/api/v1/team-requests/{req_id}/respond",headers=m2_headers,json={'decision':'accept'}).status_code==403
+    acc_res=client.post(f"/api/v1/team-requests/{req_id}/respond",headers=capt_headers,json={'decision':'accept'})
+    assert acc_res.status_code==200
+    assert client.get(f"/api/v1/events/{eid}/my-requests",headers=m1_headers).json()['join_requests']==[]
+    assert client.get(f"/api/v1/events/{eid}/my-team",headers=m1_headers).json()['team']['id']==tid
 
     # Team is now full (Captain + Member 1 = 2 members = max_team_size)
     full_invite = client.post(f"/api/v1/teams/{tid}/invitations", headers=capt_headers, json={
@@ -569,6 +589,7 @@ def test_private_team_chat_workflow():
     capt, capt_headers, _ = create_test_user("ChatCaptain")
     client.post(f"/api/v1/events/{eid}/register", headers=capt_headers)
     tid = client.post(f"/api/v1/events/{eid}/teams", headers=capt_headers, json={'name': 'Chat Squad', 'creator_role': 'Lead'}).json()['id']
+    assert client.get(f'/api/v1/events/{eid}/my-team',headers=capt_headers).json()['team']['name'] == 'CHAT SQUAD'
 
     mem, mem_headers, _ = create_test_user("ChatMember")
     client.post(f"/api/v1/events/{eid}/register", headers=mem_headers)
@@ -577,6 +598,19 @@ def test_private_team_chat_workflow():
     client.post(f"/api/v1/team-requests/{req_id}/respond", headers=mem_headers, json={'decision': 'accept'})
 
     unrelated, unrel_headers, _ = create_test_user("UnrelatedUser")
+
+    # Profile pictures are owner-editable and visible only to active teammates.
+    photo=b'\x89PNG\r\n\x1a\n'+b'avatar-test'
+    assert client.post('/api/v1/profiles/me/avatar',headers={**capt_headers,'Content-Type':'image/png'},content=photo).status_code==200
+    assert client.get(f"/api/v1/profiles/{capt['id']}/avatar",headers=capt_headers).content==photo
+    teammate_photo=client.get(f"/api/v1/profiles/{capt['id']}/avatar",headers=mem_headers)
+    assert teammate_photo.status_code==200 and teammate_photo.content==photo
+    assert teammate_photo.headers['content-type']=='image/png'
+    assert client.get(f"/api/v1/profiles/{capt['id']}/avatar",headers=unrel_headers).status_code==403
+    assert client.get(f"/api/v1/profiles/{capt['id']}/avatar").status_code==401
+    assert client.post('/api/v1/profiles/me/avatar',headers=capt_headers,content=b'<script>bad</script>').status_code==422
+    assert client.delete('/api/v1/profiles/me/avatar',headers=capt_headers).status_code==204
+    assert client.get(f"/api/v1/profiles/{capt['id']}/avatar",headers=capt_headers).status_code==404
 
     # 12. Accepted members exchange messages and reload history
     msg1 = client.post(f"/api/v1/teams/{tid}/messages", headers=capt_headers, json={
@@ -605,6 +639,27 @@ def test_private_team_chat_workflow():
     assert len(history['items']) == 2
     assert history['items'][0]['body'] == 'Welcome to the team! Let us plan the project.'
     assert history['items'][1]['body'] == 'Glad to be here! I will start on the data schema.'
+
+    # Mentions notify only accepted teammates, persist, and do not duplicate on retry.
+    mentioned = client.post(f"/api/v1/teams/{tid}/messages", headers=capt_headers,
+        json={'body':'@all Please check our rehearsal plan.', 'client_message_id':'mention-all'})
+    assert mentioned.status_code == 201
+    client.post(f"/api/v1/teams/{tid}/messages", headers=capt_headers,
+        json={'body':'@all Please check our rehearsal plan.', 'client_message_id':'mention-all'})
+    notices = client.get('/api/v1/notifications/me',headers=mem_headers).json()['items']
+    assert len(notices) == 1
+    assert notices[0]['target_path'] == f'/events/{eid}/teams'
+    assert not notices[0]['read_at']
+    assert client.get('/api/v1/notifications/me',headers=capt_headers).json()['items'] == []
+    assert client.get('/api/v1/notifications/me',headers=unrel_headers).json()['items'] == []
+    nid=notices[0]['id']
+    assert client.post(f'/api/v1/notifications/{nid}/read',headers=unrel_headers).status_code == 404
+    assert client.post(f'/api/v1/notifications/{nid}/read',headers=mem_headers).status_code == 200
+    assert client.get('/api/v1/notifications/me',headers=mem_headers).json()['items'][0]['read_at']
+    handle='chatmember-user-'+str(mem['id'])[:8]
+    assert client.post(f"/api/v1/teams/{tid}/messages",headers=capt_headers,
+        json={'body':f'@{handle} Can you confirm your role?', 'client_message_id':'mention-one'}).status_code == 201
+    assert len(client.get('/api/v1/notifications/me',headers=mem_headers).json()['items']) == 2
 
     # Ephemeral WebSocket ticket generation
     ticket_res = client.post(f"/api/v1/teams/{tid}/chat-ticket", headers=mem_headers)

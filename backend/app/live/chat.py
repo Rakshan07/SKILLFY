@@ -38,6 +38,26 @@ class MessageSendBody(BaseModel):
     body: str = Field(min_length=1, max_length=2000)
     client_message_id: Optional[str] = Field(default=None, max_length=100)
 
+def notify_mentions(db, tid, uid, body, sender_name):
+    members = rows(db, '''SELECT u.id,u.display_name FROM hackloop.team_members m
+      JOIN hackloop.users u ON u.id=m.user_id WHERE m.team_id=:tid AND m.left_at IS NULL''', tid=tid)
+    all_members = bool(re.search(r'(?<!\w)@all(?![\w-])', body, re.I))
+    team = one(db, 'SELECT name,event_id FROM hackloop.teams WHERE id=:tid', tid=tid)
+    for member in members:
+        if member['id'] == uid:
+            continue
+        name = member['display_name']
+        handle = re.sub(r'[^\w-]+', '-', name.lower()).strip('-') + '-' + str(member['id'])[:8]
+        unique_name = sum(m['display_name'].casefold() == name.casefold() for m in members) == 1
+        mentioned = re.search(r'(?<!\w)@' + re.escape(handle) + r'(?![\w-])', body, re.I)
+        if not mentioned and unique_name:
+            mentioned = re.search(r'(?<!\w)@' + re.escape(name) + r'(?![\w-])', body, re.I)
+        if all_members or mentioned:
+            execute(db, '''INSERT INTO hackloop.notifications(user_id,type,title,body,target_path)
+              VALUES(:uid,'team_mention',:title,:body,:path)''', uid=member['id'],
+              title=f"{sender_name} mentioned you in {team['name']}"[:200], body=body[:2000],
+              path=f"/events/{team['event_id']}/teams")
+
 def sanitize_chat_message(text: str) -> str:
     """Escape HTML tags and strip control characters to prevent HTML/XSS injection."""
     cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
@@ -137,6 +157,7 @@ async def send_team_message(
         :tid, :mid, :body, :cid, :uid, now()
       ) RETURNING *''',
       tid=tid, mid=m['id'], body=clean_text, cid=body.client_message_id, uid=uid)
+    notify_mentions(db, tid, uid, clean_text, user.get('display_name') or 'A teammate')
     db.commit()
 
     created_iso = msg_row['created_at'].isoformat() if hasattr(msg_row['created_at'], 'isoformat') else str(msg_row['created_at'])
@@ -248,6 +269,7 @@ async def team_chat_websocket(websocket: WebSocket, tid: UUID):
                                 :tid, :mid, :body, :cid, :uid, now()
                               ) RETURNING *''',
                               tid=tid, mid=m['id'], body=clean_body, cid=client_id, uid=uid)
+                            notify_mentions(db, tid, uid, clean_body, ticket_data['display_name'])
                             db.commit()
 
                             broadcast_payload = {

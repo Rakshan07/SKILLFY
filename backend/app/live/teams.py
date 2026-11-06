@@ -67,7 +67,8 @@ def create_team(eid: UUID, body: TeamCreateBody, user = Depends(current_user), d
     require(not active_m, 409, 'You are already an active member of a team for this event')
 
     # Name uniqueness within this event
-    clean_name = body.name.strip()
+    clean_name = body.name.strip().upper()
+    require(2 <= len(clean_name) <= 100, 422, 'Team name must contain 2 to 100 characters')
     existing_name = one(db, 'SELECT 1 FROM hackloop.teams WHERE event_id=:eid AND lower(name)=lower(:name)', eid=eid, name=clean_name)
     require(not existing_name, 409, f"A team named '{clean_name}' already exists for this event")
 
@@ -254,7 +255,7 @@ def request_to_join(tid: UUID, body: JoinRequestBody, user = Depends(current_use
     """Participant requests to join a team."""
     require('participant' in user['roles'] and 'organizer' not in user['roles'], 403, 'Organizer accounts cannot join participant teams.')
     uid = user['id']
-    team = require(one(db, 'SELECT * FROM hackloop.teams WHERE id=:id', id=tid), 404, 'Team not found')
+    team = require(one(db, 'SELECT * FROM hackloop.teams WHERE id=:id FOR UPDATE', id=tid), 404, 'Team not found')
     eid = team['event_id']
 
     require(team['status'] == 'forming' and team.get('is_recruiting', True), 409, 'This team is not currently recruiting members')
@@ -270,9 +271,11 @@ def request_to_join(tid: UUID, body: JoinRequestBody, user = Depends(current_use
     require(not active_m, 409, 'You are already a member of an active team for this event')
 
     # Cannot have pending join request for this team
-    existing_req = one(db, "SELECT 1 FROM hackloop.team_requests WHERE team_id=:tid AND user_id=:uid AND request_type='join_request' AND status='pending'",
+    execute(db, "UPDATE hackloop.team_requests SET status='expired' WHERE team_id=:tid AND user_id=:uid AND status='pending' AND expires_at<=now()", tid=tid, uid=uid)
+    existing_req = one(db, "SELECT id,expires_at FROM hackloop.team_requests WHERE team_id=:tid AND user_id=:uid AND request_type='join_request' AND status='pending'",
                        tid=tid, uid=uid)
-    require(not existing_req, 409, 'You have already sent a join request to this team')
+    if existing_req:
+        return {'status':'requested','request_id':str(existing_req['id']),'expires_at':existing_req['expires_at']}
 
     target_role = body.target_role or 'Contributor'
     expires_at = datetime.now(timezone.utc) + timedelta(days=3)
@@ -286,7 +289,7 @@ def request_to_join(tid: UUID, body: JoinRequestBody, user = Depends(current_use
       msg=body.message, role=target_role, exp=expires_at)
 
     db.commit()
-    return {'status': 'requested', 'request_id': str(req_row['id'])}
+    return {'status': 'requested', 'request_id': str(req_row['id']), 'expires_at':req_row['expires_at']}
 
 @router.get('/teams/{tid}/requests')
 def list_team_requests(tid: UUID, user = Depends(current_user), db = Depends(get_db)):
@@ -328,7 +331,10 @@ def list_my_requests_for_event(eid: UUID, user = Depends(current_user), db = Dep
         AND tr.status='pending' AND tr.expires_at > now()
       ORDER BY tr.created_at DESC''', eid=eid, uid=uid)
 
-    return {'invitations': [{
+    outgoing=rows(db, '''SELECT id,team_id,status,expires_at FROM hackloop.team_requests
+      WHERE event_id=:eid AND user_id=:uid AND request_type='join_request'
+      AND status='pending' AND expires_at>now()''',eid=eid,uid=uid)
+    return {'join_requests':outgoing,'invitations': [{
         'id': str(r['id']),
         'team_id': str(r['team_id']),
         'team_name': r['team_name'],

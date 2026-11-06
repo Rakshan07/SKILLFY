@@ -120,7 +120,7 @@ export function Assessment({ eventId }) {
       <Heading
         eyebrow="EVENT ASSESSMENT"
         title="Show how you think."
-        description="Practical scenario-based questions calibrated for your skills and preferred role."
+        description="Questions tailored to this event, your skills and preferred role."
       >
         <Link className="tw-button secondary" to={`/events/${encodeURIComponent(eventId)}`}>
           <ArrowLeft size={16} />Back to Event
@@ -131,13 +131,13 @@ export function Assessment({ eventId }) {
 
       {/* State 1: Not started */}
       {status === 'not_started' && (
-        <Panel title="Personalized Case Study Intake" description="Evaluate your capabilities for complementary team matching.">
+        <Panel title="Your event assessment" description="Evaluate your capabilities for complementary team matching.">
           <div className="tw-empty">
             <div className="tw-empty-symbol"><ClipboardCheck size={28} /></div>
-            <h3>Ready to begin your case study?</h3>
+            <h3>Ready to begin your assessment?</h3>
             <p>
-              You will receive 2 to 3 scenario questions tailored to this event, your declared skills, and preferred role.
-              Questions test real architectural decisions, trade-offs, and practical execution.
+              You will receive 2 to 3 questions tailored to this event, your skills and preferred role.
+              The question format depends on the event category.
             </p>
             <div style={{ maxWidth: 480, margin: '15px auto', textAlign: 'left', background: 'var(--sf-surface)', padding: 14, borderRadius: 8, border: '1px solid var(--sf-border)' }}>
               <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
@@ -160,7 +160,7 @@ export function Assessment({ eventId }) {
               disabled={!disclosureAccepted || starting} 
               onClick={handleStart}
             >
-              {starting ? 'Generating case studies...' : 'Start Assessment'}
+              {starting ? 'Generating questions…' : 'Start Assessment'}
               <Sparkles size={16} />
             </button>
           </div>
@@ -169,12 +169,12 @@ export function Assessment({ eventId }) {
 
       {/* State 2: Generating */}
       {status === 'generating' && (
-        <Panel title="Crafting your personalized scenarios">
+        <Panel title="Preparing your questions">
           <div className="tw-empty">
             <div className="tw-empty-symbol"><Sparkles size={28} /></div>
             <h3>Generating tailored questions...</h3>
             <p>
-              Our assessment architect is formulating practical written scenarios matching this event brief and your selected role. This typically takes 5–15 seconds.
+              Preparing questions for this event and your selected role.
             </p>
             <button className="tw-button secondary" onClick={() => assessmentResource.reload()}>Check status</button>
           </div>
@@ -184,7 +184,7 @@ export function Assessment({ eventId }) {
       {/* State 3: Ready or Draft */}
       {(status === 'ready' || status === 'draft') && data?.questions && (
         <Panel 
-          title="Assigned Scenarios" 
+          title="Your questions"
           description={`Role: ${data.selected_role || 'Contributor'} · Total questions: ${data.questions.length}`}
           action={
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -231,7 +231,7 @@ export function Assessment({ eventId }) {
                       rows={6}
                       value={currentAns}
                       onChange={e => handleAnswerChange(q.id, e.target.value)}
-                      placeholder="Explain your approach, key decisions, architectural trade-offs, and how you would address edge cases..."
+                      placeholder="Write your answer here…"
                     />
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--sf-muted)' }}>
                       <span>Minimum 20 characters</span>
@@ -271,7 +271,7 @@ export function Assessment({ eventId }) {
             <div className="tw-empty-symbol"><Sparkles size={28} /></div>
             <h3>Analyzing your answers...</h3>
             <p>
-              Your written solutions are being evaluated against the scenario rubrics and event requirements. You can safely refresh or return later; your progress is preserved.
+              Your written solutions are being evaluated against the assessment rubrics and event requirements. You can safely refresh or return later; your progress is preserved.
             </p>
             <button className="tw-button secondary" onClick={() => assessmentResource.reload()}>Refresh Results</button>
           </div>

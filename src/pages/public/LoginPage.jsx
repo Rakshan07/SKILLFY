@@ -1,3 +1,4 @@
+import ThemeToggle from '../../components/ui/ThemeToggle';
 import EmailSignup from '../../components/auth/EmailSignup';
 import SocialSignIn from '../../components/auth/SocialSignIn';
 // ─── Dedicated Login & Sign Up Page ──────────────────────────────────────────
@@ -42,7 +43,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="relative min-h-screen bg-[var(--sf-bg)] text-[var(--sf-text)] flex flex-col justify-between overflow-hidden">
+    <div className="sf-auth-page relative min-h-screen bg-[var(--sf-bg)] text-[var(--sf-text)] flex flex-col justify-between overflow-hidden">
       {/* Interactive 3D Tubes Background exclusively mounted on initial Auth screen */}
       <TubesBackground />
 
@@ -58,7 +59,7 @@ export default function LoginPage() {
           <ArrowLeft size={13} />
           <span>Back to Home</span>
         </Link>
-      </header>
+      <ThemeToggle /></header>
 
       {/* Main Auth Container */}
       <main className="relative z-20 max-w-md w-full mx-auto px-5 my-auto py-8">
